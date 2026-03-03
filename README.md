@@ -22,7 +22,8 @@ Before you begin, ensure you have the following installed:
 This project deploys:
 - **Keycloak**: Open-source Identity and Access Management solution
 - **Grafana**: Observability and visualization platform
-- **Microservice**: A simple python script to read users and roles in Keycloak on a cron schedule as a cronjob in kubernetes
+- **Microservice**: A simple python FastAPI service that verifies the service account token and returns the token body
+- **Microservice-test**: A simple python script to run tests against the Microservice API, it gets an access token from keycloak to run the tests with
 
 ## Deployment Instructions
 
@@ -49,6 +50,9 @@ kubectl port-forward -n apps svc/keycloak 8080:8080
 
 # Forward Grafana
 kubectl port-forward -n apps svc/grafana 3000:3000
+
+# Forward Grafana
+kubectl port-forward -n apps svc/microservice 9000:9000
 ```
 
 ### 3. Configure Keycloak, Grafana, Microservice Integration
@@ -75,6 +79,28 @@ After successful deployment:
 - **URL**: http://localhost:3000
 - **Login**: Click "Sign in with Keycloak" and use one of the users that was in the outputs of the terraform script
 
+### Microservice
+- **URL**: http://localhost:9000
+- **Client_ID**: microservice
+- **Client_Secret**: kc_ms_1234
+- **Client SA Role**: ms_api_access
+
+
+#### 1. Retrieving an access token:
+```
+curl -X POST "http://localhost:8080/realms/app-realm/protocol/openid-connect/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "client_id=microservice" \
+  -d "client_secret=kc_ms_1234" \
+  -d "grant_type=client_credentials"
+```
+
+#### 2. Testing an access token:
+```
+curl -X GET "http://localhost:9000/access" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>"
+```
 ## Cleanup
 
 To destroy all resources:

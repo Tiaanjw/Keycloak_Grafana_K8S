@@ -1,68 +1,88 @@
-#!/usr/bin/env python3
-import os, sys, time, requests
+import os
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+import jwt
+from jwt import PyJWKClient
+from datetime import datetime
 
-KEYCLOAK_URL   = os.getenv("KEYCLOAK_URL")
+KEYCLOAK_URL = os.getenv("KEYCLOAK_URL")
 KEYCLOAK_REALM = os.getenv("KEYCLOAK_REALM")
-CLIENT_ID      = os.getenv("CLIENT_ID")
-CLIENT_SECRET  = os.getenv("CLIENT_SECRET")
+CLIENT_ID = os.getenv("CLIENT_ID")
+CLIENT_SA_ROLE = os.getenv("CLIENT_SA_ROLE")
 
-def get_access_token(realm, client_id, client_secret):
-    url = f"{KEYCLOAK_URL}/realms/{realm}/protocol/openid-connect/token"
+app = FastAPI(title="Keycloak Protected API", version="1.0.0")
 
-    response = requests.post(url, data={
-        "grant_type":    "client_credentials",
-        "client_id":     client_id,
-        "client_secret": client_secret,
-    }, timeout=10)
-    response.raise_for_status()
-
-    return response.json()["access_token"]
+def get_keycloak_public_key():
+    jwks_url = f"{KEYCLOAK_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect/certs"
+    return PyJWKClient(jwks_url)
 
 
-def get_users(realm, token):
-    url = f"{KEYCLOAK_URL}/admin/realms/{realm}/users"
-    response = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
-    response.raise_for_status()
+def verify_token(credentials: HTTPAuthorizationCredentials = Depends(HTTPBearer())):
+    token = credentials.credentials
     
-    return response.json()
+    try:
+        jwks_client = get_keycloak_public_key()
+        signing_key = jwks_client.get_signing_key_from_jwt(token)
+    
+        payload = jwt.decode(
+            token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=[CLIENT_ID],
+            options={"verify_exp": True}
+        )
+        
+        return payload
+    
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has expired"
+        )
+    except jwt.InvalidTokenError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: {str(e)}"
+        )
 
 
-def get_user_roles(realm, token, user_id):
-    url = f"{KEYCLOAK_URL}/admin/realms/{realm}/users/{user_id}/role-mappings/realm"
-    response = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
-    response.raise_for_status()
+def require_role(required_role: str):
+    def role_checker(token_payload: dict = Depends(verify_token)):
+        client_roles = token_payload.get("resource_access", {}).get(CLIENT_ID, {}).get("roles", [])
+        
+        if required_role not in client_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Required role '{required_role}' not found"
+            )
+        
+        return token_payload
+    
+    return role_checker
 
-    return [role["name"] for role in response.json()]
+@app.get("/health")
+def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
-def main():
-    print(f"Connecting to {KEYCLOAK_URL} (realm: {KEYCLOAK_REALM})...\n")
 
-    token = get_access_token(KEYCLOAK_REALM, CLIENT_ID, CLIENT_SECRET)
-    print("Authenticated successfully\n")
+@app.get("/access")
+def get_user_info(token_payload: dict = Depends(verify_token)):
+    return {
+        "message:": "You have been verified to access this SA restricted endpoint",
+        "username": token_payload.get("preferred_username"),
+        "payload": token_payload
+    }
 
-    users = get_users(KEYCLOAK_REALM, token)
-    print(f"Found {len(users)} user(s):\n")
-
-    print(f"{'Username':<20} {'Email':<35} {'Roles'}")
-    print("-" * 75)
-
-    for user in users:
-        roles = get_user_roles(KEYCLOAK_REALM, token, user["id"])
-        print(f"{user.get('username', ''):<20} {user.get('email', ''):<35} {', '.join(roles) or '(none)'}")
+@app.get("/restricted-access")
+def admin_endpoint(token_payload: dict = Depends(require_role(CLIENT_SA_ROLE))):
+    return {
+        "message": "You have been verified to access this SA and Role restricted endpoint!",
+        "username": token_payload.get("preferred_username"),
+        "roles:": token_payload.get("resource_access", {}).get(CLIENT_ID, {}).get("roles", []),
+        "payload": token_payload
+    }
 
 
 if __name__ == "__main__":
-    RETRY_MAX_ATTEMPTS = 10
-    RETRY_WAIT_TIMEOUT = 10
-
-    for attempt in range(1, RETRY_MAX_ATTEMPTS + 1):
-        try:
-            main()
-            break
-
-        except Exception as e:
-            if attempt == RETRY_MAX_ATTEMPTS:
-                print(f"Failed after {attempt} attempt(s): {e}")
-                sys.exit(1)
-
-            time.sleep(RETRY_WAIT_TIMEOUT)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=9000)

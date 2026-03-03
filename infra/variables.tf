@@ -76,3 +76,15 @@ variable "microservice_client_secret" {
   type        = string
   sensitive   = true
 }
+
+variable "microservice_client_sa_role" {
+  description = "Client SA role for the microservice"
+  type        = string
+  sensitive   = true
+}
+
+variable "microservice_port" {
+  description = "Port to expose microservice on localhost"
+  type        = number
+  default     = 9000
+}

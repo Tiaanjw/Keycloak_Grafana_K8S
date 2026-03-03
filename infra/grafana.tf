@@ -72,6 +72,7 @@ resource "kubernetes_service_v1" "grafana" {
     type = "ClusterIP"
 
     port {
+      name        = "http"
       port        = var.grafana_port
       target_port = 3000
     }

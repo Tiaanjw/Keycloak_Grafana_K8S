@@ -85,6 +85,12 @@ variable "microservice_kc_client_secret" {
   sensitive   = true
 }
 
+variable "microservice_client_sa_role" {
+  description = "Client SA role for the microservice"
+  type        = string
+  sensitive   = true
+}
+
 variable "grafana_kc_roles" {
   description = "Roles to be created in Keycloak for Grafana"
   type        = list(string)

@@ -9,5 +9,6 @@ keycloak_realm          = "app-realm"
 grafana_admin_username = "admin"
 grafana_admin_password = "admin"
 
-microservice_client_id     = "microservice"
-microservice_client_secret = "kc_ms_1234"
+microservice_client_id      = "microservice"
+microservice_client_secret  = "kc_ms_1234"
+microservice_client_sa_role = "ms_api_access"

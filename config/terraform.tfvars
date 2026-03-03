@@ -15,7 +15,7 @@ grafana_external_port    = 3000
 
 microservice_kc_client_id     = "microservice"
 microservice_kc_client_secret = "kc_ms_1234"
-
+microservice_client_sa_role   = "ms_api_access"
 
 grafana_kc_roles = ["admin", "editor", "viewer"]
 users_list = [

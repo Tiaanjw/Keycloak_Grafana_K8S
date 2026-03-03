@@ -31,26 +31,23 @@ resource "keycloak_openid_client" "grafana" {
   web_origins           = ["http://${var.grafana_external_host}:${var.grafana_external_port}"]
 }
 
-resource "keycloak_openid_user_realm_role_protocol_mapper" "grafana_role_mapper" {
-  realm_id            = keycloak_realm.app.id
-  client_id           = keycloak_openid_client.grafana.id
-  name                = "realm-roles"
-  claim_name          = "roles"
-  multivalued         = true
-  add_to_id_token     = true
-  add_to_access_token = true
-  add_to_userinfo     = true
+resource "keycloak_openid_user_client_role_protocol_mapper" "grafana_role_mapper" {
+  realm_id                    = keycloak_realm.app.id
+  client_id                   = keycloak_openid_client.grafana.id
+  client_id_for_role_mappings = keycloak_openid_client.grafana.client_id
+  name                        = "grafana-client-role-mapper"
+  claim_name                  = "roles"
+  multivalued                 = true
+  add_to_id_token             = true
+  add_to_access_token         = true
+  add_to_userinfo             = true
 }
 
-module "keycloak_role" {
-  source = "./modules/keycloak/role"
-  providers = {
-    keycloak = keycloak
-  }
-
+resource "keycloak_role" "grafana_role" {
   for_each  = toset(var.grafana_kc_roles)
   realm_id  = keycloak_realm.app.id
-  role_name = each.value
+  client_id = keycloak_openid_client.grafana.id
+  name      = each.value
 }
 
 module "keycloak_user" {
@@ -61,6 +58,7 @@ module "keycloak_user" {
   count = length(var.users_list)
 
   realm_id         = keycloak_realm.app.id
+  client_id        = keycloak_openid_client.grafana.id
   username         = var.users_list[count.index].username
   first_name       = var.users_list[count.index].first_name
   last_name        = var.users_list[count.index].last_name
@@ -69,7 +67,7 @@ module "keycloak_user" {
 
   roles = var.users_list[count.index].roles
 
-  depends_on = [module.keycloak_role]
+  depends_on = [keycloak_role.grafana_role]
 }
 
 resource "grafana_sso_settings" "generic_sso_settings" {
@@ -104,21 +102,23 @@ resource "keycloak_openid_client" "microservice" {
   standard_flow_enabled    = false
 }
 
-
-data "keycloak_openid_client" "realm_management" {
+resource "keycloak_role" "microservice_role" {
   realm_id  = keycloak_realm.app.id
-  client_id = "realm-management"
+  client_id = keycloak_openid_client.microservice.id
+  name      = var.microservice_client_sa_role
 }
 
-data "keycloak_role" "view_users" {
-  realm_id  = keycloak_realm.app.id
-  client_id = data.keycloak_openid_client.realm_management.id
-  name      = "view-users"
-}
-
-resource "keycloak_openid_client_service_account_role" "microservice_view_users" {
+resource "keycloak_openid_client_service_account_role" "client_service_account_role" {
   realm_id                = keycloak_realm.app.id
   service_account_user_id = keycloak_openid_client.microservice.service_account_user_id
-  client_id               = data.keycloak_openid_client.realm_management.id
-  role                    = data.keycloak_role.view_users.name
+  client_id               = keycloak_openid_client.microservice.id
+  role                    = keycloak_role.microservice_role.name
+}
+
+resource "keycloak_openid_audience_protocol_mapper" "microservice_audience_mapper" {
+  realm_id                 = keycloak_realm.app.id
+  client_id                = keycloak_openid_client.microservice.id
+  name                     = "audience-mapper"
+  included_client_audience = keycloak_openid_client.microservice.client_id
+  add_to_access_token      = true
 }

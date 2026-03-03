@@ -14,9 +14,10 @@ resource "keycloak_user" "user" {
 }
 
 data "keycloak_role" "roles" {
-  count = length(var.roles)
-  realm_id = var.realm_id
-  name     = var.roles[count.index]
+  count     = length(var.roles)
+  realm_id  = var.realm_id
+  client_id = var.client_id
+  name      = var.roles[count.index]
 }
 
 resource "keycloak_user_roles" "roles" {
